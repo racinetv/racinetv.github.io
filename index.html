@@ -43,7 +43,6 @@
       font-size:48px; background:rgba(0,0,0,0.6); padding:20px 40px;
       border-radius:12px; display:none;
     }
-    /* Mini OSD khi đổi kênh */
     #channel-osd {
       position:absolute; top:20px; left:20px;
       background:rgba(0,0,0,0.7); padding:10px 20px; border-radius:12px;
@@ -55,7 +54,7 @@
 </head>
 <body>
   <!-- Video player -->
-  <video id="video" autoplay playsinline></video>
+  <video id="video" autoplay playsinline muted></video>
 
   <!-- Danh sách kênh -->
   <div id="overlay">
@@ -74,7 +73,7 @@
 
   <script>
     // --- CONFIG ---
-    const M3U_URL = "https://raw.githubusercontent.com/vnrartv/vnrartv.github.io/refs/heads/main/racinetv_android_tv.m3u"; // Thay bằng playlist M3U của bạn
+    const M3U_URL = "https://raw.githubusercontent.com/vnrartv/vnrartv.github.io/main/racinetv_android_tv.m3u";
     const pageSize = 12;
     const cols = 4;
 
@@ -88,6 +87,8 @@
     let numberInput = "";
     let numberTimer = null;
     let osdTimer = null;
+    let zapInterval = null;
+    let hls = null;
 
     // --- DOM ---
     const video = document.getElementById("video");
@@ -102,50 +103,65 @@
 
     // --- PARSE M3U ---
     async function loadM3U(url) {
-      const res = await fetch(url);
-      const text = await res.text();
-      const lines = text.split("\n");
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Không tải được file M3U");
+        const text = await res.text();
+        const lines = text.split("\n");
 
-      const result = [];
-      let current = {};
+        const result = [];
+        let current = {};
 
-      lines.forEach(line => {
-        line = line.trim();
-        if (line.startsWith("#EXTINF")) {
-          const nameMatch = line.match(/,(.*)$/);
-          const logoMatch = line.match(/tvg-logo="(.*?)"/);
-          current = {
-            name: nameMatch ? nameMatch[1] : "No name",
-            logo: logoMatch ? logoMatch[1] : "",
-          };
-        } else if (line && !line.startsWith("#")) {
-          current.url = line;
-          current.epg = "Đang cập nhật...";
-          result.push(current);
-          current = {};
-        }
-      });
+        lines.forEach(line => {
+          line = line.trim();
+          if (line.startsWith("#EXTINF")) {
+            const nameMatch = line.match(/,(.*)$/);
+            const logoMatch = line.match(/tvg-logo="(.*?)"/);
+            current = {
+              name: nameMatch ? nameMatch[1] : "No name",
+              logo: logoMatch ? logoMatch[1] : "",
+            };
+          } else if (line && !line.startsWith("#")) {
+            current.url = line;
+            current.epg = "Đang cập nhật...";
+            result.push(current);
+            current = {};
+          }
+        });
 
-      return result;
+        return result;
+      } catch (err) {
+        epgDiv.textContent = "Lỗi: " + err.message;
+        return [];
+      }
     }
 
-    // --- LOAD CHANNEL (đa định dạng) ---
+    // --- LOAD CHANNEL ---
     function loadChannel(index) {
       if (index < 0 || index >= channels.length) return;
       currentIndex = index;
       const ch = channels[index];
 
-      // Phát theo định dạng
+      if (hls) {
+        hls.destroy();
+        hls = null;
+      }
+
       if (ch.url.endsWith(".m3u8")) {
         if (Hls.isSupported()) {
-          const hls = new Hls();
+          hls = new Hls();
           hls.loadSource(ch.url);
           hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            video.play().catch(err => console.warn("Autoplay bị chặn:", err));
+          });
         } else {
-          video.src = ch.url; // fallback
+          video.src = ch.url;
+          video.play().catch(()=>{});
         }
       } else {
-        video.src = ch.url; // mp4, mov, ts, mpeg
+        video.src = ch.url;
+        video.play().catch(()=>{});
       }
 
       showChannelOSD(ch);
@@ -178,13 +194,6 @@
     }
 
     // --- OSD ---
-    function showNumberOSD(num) {
-      numberOSD.textContent = num;
-      numberOSD.style.display = "block";
-    }
-    function hideNumberOSD() {
-      numberOSD.style.display = "none";
-    }
     function showChannelOSD(ch) {
       osdLogo.src = ch.logo || "";
       osdName.textContent = ch.name;
@@ -193,90 +202,11 @@
       osdTimer = setTimeout(()=>{ channelOSD.style.display="none"; },3000);
     }
 
-    // --- REMOTE CONTROL ---
-    document.addEventListener("keydown",(e)=>{
-      // --- chọn kênh bằng số ---
-      if (/^[0-9]$/.test(e.key)) {
-        numberInput += e.key;
-        showNumberOSD(numberInput);
-        clearTimeout(numberTimer);
-        numberTimer = setTimeout(()=>{
-          const index = parseInt(numberInput,10)-1;
-          if (!isNaN(index)) loadChannel(index);
-          numberInput="";
-          hideNumberOSD();
-        },1500);
-        return;
-      }
-
-      if (!overlayVisible) {
-        // === khi overlay tắt ===
-        switch(e.key){
-          case "ArrowUp":
-            loadChannel((currentIndex-1+channels.length)%channels.length);
-            break;
-          case "ArrowDown":
-            loadChannel((currentIndex+1)%channels.length);
-            break;
-          case "Enter": // OK → bật overlay
-            overlayVisible = true;
-            overlay.style.display="block";
-            focusIndex = currentIndex; // focus về kênh đang xem
-            renderGrid();
-            break;
-        }
-      } else {
-        // === khi overlay bật ===
-        switch(e.key){
-          case "ArrowUp":
-            if (focusIndex-cols>=0) focusIndex-=cols;
-            renderGrid();
-            break;
-          case "ArrowDown":
-            if (focusIndex+cols<channels.length) focusIndex+=cols;
-            renderGrid();
-            break;
-          case "ArrowLeft":
-            if (focusIndex>0) focusIndex--;
-            renderGrid();
-            break;
-          case "ArrowRight":
-            if (focusIndex<channels.length-1) focusIndex++;
-            renderGrid();
-            break;
-          case "PageUp":
-            if (currentPage>0) {
-              currentPage--;
-              focusIndex = currentPage*pageSize;
-              renderGrid();
-            }
-            break;
-          case "PageDown":
-            if (currentPage<Math.ceil(channels.length/pageSize)-1) {
-              currentPage++;
-              focusIndex = currentPage*pageSize;
-              renderGrid();
-            }
-            break;
-          case "Enter": // OK → chọn kênh + ẩn overlay
-            loadChannel(focusIndex);
-            overlayVisible = false;
-            overlay.style.display="none";
-            break;
-          case "Backspace":
-          case "Escape": // thoát overlay
-            overlayVisible = false;
-            overlay.style.display="none";
-            break;
-        }
-      }
-    });
-
     // --- START ---
     (async ()=>{
       channels = await loadM3U(M3U_URL);
       if (channels.length>0) {
-        loadChannel(0); // tự động phát kênh đầu tiên
+        loadChannel(0);
       } else {
         epgDiv.textContent = "Không tìm thấy kênh trong M3U!";
       }
