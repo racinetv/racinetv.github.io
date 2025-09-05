@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>IPTV Player</title>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.9.3/shaka-player.compiled.js"></script>
   <style>
     body { margin:0; background:#000; color:#fff; font-family:sans-serif; overflow:hidden;}
     video { width:100%; height:100vh; object-fit:cover; background:#000; }
@@ -51,11 +51,22 @@
     }
     #channel-osd img { width:50px; height:50px; object-fit:contain; }
     #channel-osd span { font-size:18px; font-weight:bold; }
+
+    /* Loading spinner */
+    #loading {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      border:6px solid rgba(255,255,255,0.3);
+      border-top:6px solid #00bfff;
+      border-radius:50%; width:60px; height:60px;
+      animation:spin 1s linear infinite;
+      display:none;
+    }
+    @keyframes spin { 100% { transform:translate(-50%,-50%) rotate(360deg); } }
   </style>
 </head>
 <body>
   <!-- Video player -->
-  <video id="video" autoplay playsinline muted></video>
+  <video id="video" autoplay playsinline></video>
 
   <!-- Danh sách kênh -->
   <div id="overlay">
@@ -71,6 +82,9 @@
 
   <!-- Mini OSD kênh -->
   <div id="channel-osd"><img id="osd-logo"><span id="osd-name"></span></div>
+
+  <!-- Loading -->
+  <div id="loading"></div>
 
   <script>
     // --- CONFIG ---
@@ -89,7 +103,7 @@
     let numberTimer = null;
     let osdTimer = null;
     let zapInterval = null;
-    let hls = null;
+    let player = null;
 
     // --- DOM ---
     const video = document.getElementById("video");
@@ -101,6 +115,7 @@
     const channelOSD = document.getElementById("channel-osd");
     const osdLogo = document.getElementById("osd-logo");
     const osdName = document.getElementById("osd-name");
+    const loading = document.getElementById("loading");
 
     // --- PARSE M3U ---
     async function loadM3U(url) {
@@ -132,39 +147,56 @@
     }
 
     // --- LOAD CHANNEL ---
-    function loadChannel(index) {
+    async function loadChannel(index) {
       if (index < 0 || index >= channels.length) return;
       currentIndex = index;
       const ch = channels[index];
+      const url = ch.url.toLowerCase();
 
-      if (hls) {
-        hls.destroy();
-        hls = null;
+      loading.style.display = "block";
+
+      if (player) {
+        await player.destroy();
+        player = null;
       }
 
-      if (ch.url.endsWith(".m3u8")) {
-        if (Hls.isSupported()) {
-          hls = new Hls();
-          hls.loadSource(ch.url);
-          hls.attachMedia(video);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            // ép chọn chất lượng cao nhất
-            hls.currentLevel = hls.levels.length - 1;
-            hls.nextLevel = hls.levels.length - 1;
-            hls.autoLevelEnabled = true;
+      try {
+        if (url.endsWith(".m3u8") || url.endsWith(".mpd")) {
+          // --- Shaka Player cho HLS/DASH ---
+          player = new shaka.Player(video);
 
-            video.muted = true; // bật tiếng khi load kênh
-            video.play().catch(err => console.warn("Autoplay bị chặn:", err));
+          player.addEventListener("error", e => {
+            console.error("Shaka error", e.detail);
+            loading.style.display = "none";
           });
+
+          await player.load(ch.url);
+
+          // chọn chất lượng cao nhất
+          const tracks = player.getVariantTracks();
+          if (tracks.length > 0) {
+            const best = tracks.reduce((a,b)=> a.bandwidth>b.bandwidth ? a : b);
+            player.selectVariantTrack(best, true);
+          }
+
+          video.muted = false;
+          await video.play();
+
+          loading.style.display = "none";
+
+        } else if (url.endsWith(".mp4") || url.endsWith(".ts") || url.endsWith(".mov") || url.endsWith(".mpeg") || url.endsWith(".php")) {
+          // --- Dùng thẳng <video> ---
+          video.src = ch.url;
+          video.muted = false;
+          video.play().catch(err=>console.error("Play error", err));
+          video.oncanplay = () => loading.style.display = "none";
         } else {
-          video.src = ch.url; 
-          video.muted = true;
-          video.play().catch(()=>{});
+          console.warn("Định dạng không được hỗ trợ:", ch.url);
+          loading.style.display = "none";
         }
-      } else {
-        video.src = ch.url; 
-        video.muted = true;
-        video.play().catch(()=>{});
+      } catch (err) {
+        console.error("Load channel error", err);
+        loading.style.display = "none";
       }
 
       showChannelOSD(ch);
@@ -214,7 +246,7 @@
 
     // --- REMOTE CONTROL ---
     document.addEventListener("keydown",(e)=>{
-      // --- chọn kênh bằng số ---
+      // chọn kênh bằng số
       if (/^[0-9]$/.test(e.key)) {
         numberInput += e.key;
         showNumberOSD(numberInput);
