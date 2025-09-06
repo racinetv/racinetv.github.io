@@ -1,0 +1,16 @@
+#EXTM3U
+
+#EXTINF:-1 tvg-id="1" tvg-name="VTV1" tvg-logo="https://vnrartv.github.io/vtv/vtv1.webp" group-title="VTV" user-agent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" referer="" cookie="id=" origin="" drm="WIDEVINE" clearkey="" keyks="",VTV1
+https://hls.mskycdn.online/tv/vtv1hd/index.m3u8
+
+#EXTINF:-1 tvg-id="2" tvg-name="VTV2" tvg-logo="https://vnrartv.github.io/vtv/vtv2.webp" group-title="VTV" user-agent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" referer="" cookie="id=" origin="" drm="WIDEVINE" clearkey="" keyks="",VTV2
+https://hls.mskycdn.online/tv/vtv2hd/index.m3u8
+
+#EXTINF:-1 tvg-id="3" tvg-name="VTV3" tvg-logo="https://vnrartv.github.io/vtv/vtv3.webp" group-title="VTV" user-agent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" referer="" cookie="id=" origin="" drm="WIDEVINE" clearkey="" keyks="",VTV3
+https://hls.mskycdn.online/tv/vtv3hd/index.m3u8
+
+#EXTINF:-1 tvg-id="4" tvg-name="VTV4" tvg-logo="https://vnrartv.github.io/vtv/vtv4.webp" group-title="VTV" user-agent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" referer="" cookie="id=" origin="" drm="WIDEVINE" clearkey="" keyks="",VTV4
+https://hls.mskycdn.online/tv/vtv4hd/index.m3u8
+
+#EXTINF:-1 tvg-id="5" tvg-name="VTV5" tvg-logo="https://vnrartv.github.io/vtv/vtv5.webp" group-title="VTV" user-agent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" referer="" cookie="id=" origin="" drm="WIDEVINE" clearkey="" keyks="",VTV5
+https://hls.mskycdn.online/tv/vtv5hd/index.m3u8
