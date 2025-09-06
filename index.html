@@ -9,27 +9,22 @@
 
 <style>
 body { margin:0; background:#000; color:#fff; font-family:sans-serif; overflow:hidden;}
-#bg-loading {
-  position:absolute; top:0; left:0; width:100%; height:100vh;
-  object-fit:cover; z-index:0;
-}
-video {
-  position:relative; z-index:1;
-  width:100%; height:100vh; object-fit:cover; background:#000;
-}
-#overlay {position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:none;padding:20px;overflow:hidden; z-index:2;}
+video {width:100%; height:100vh; object-fit:cover; background:#000;}
+#overlay {position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:none;padding:20px;overflow:hidden;}
 #grid {display:flex; flex-direction:column; gap:8px; padding:10px; max-height:100vh; overflow-y:auto;
        scrollbar-width: thin; scrollbar-color: #00bfff rgba(255,255,255,0.1);}
 #grid::-webkit-scrollbar {width: 0px;}
+#grid::-webkit-scrollbar-track {background: rgba(255,255,255,0.1); border-radius:4px;}
+#grid::-webkit-scrollbar-thumb {background-color: #00bfff; border-radius:5px;}
 .channel {display:flex; align-items:center; background:rgba(255,255,255,0.05); border-radius:12px; padding:8px 12px; transition:all 0.2s; cursor:pointer;}
 .channel img {width:100px; height:50px; object-fit:contain; margin-right:15px;}
-.channel.focused {outline:1px solid #00bfff; transform: scale(1.08); background: rgba(0,191,255,0.3);}
+.channel.focused {outline:1px solid #00bfff; transform: scale(1.08); background: rgba(0,191,255,0.3); transition: all 0.2s ease-in-out;}
 .channel.active {background:rgba(0,191,255,0.3);}
-#number-osd {position:absolute; top:35%; left:35%; transform:translateX(-50%); font-size:20px; background:rgba(0,0,0,0.6); padding:20px 40px; border-radius:12px; display:none; z-index:3;}
-#channel-osd {position:absolute; top:20px; left:20px; background:rgba(0,0,0,0.7); padding:10px 20px; border-radius:12px; display:none; align-items:center; gap:10px; z-index:3;}
+#number-osd {position:absolute; top:35%; left:35%; transform:translateX(-50%); font-size:20px; background:rgba(0,0,0,0.6); padding:20px 40px; border-radius:12px; display:none;}
+#channel-osd {position:absolute; top:20px; left:20px; background:rgba(0,0,0,0.7); padding:10px 20px; border-radius:12px; display:none; align-items:center; gap:10px;}
 #channel-osd img { width:100px; height:50px; object-fit:contain; }
 #channel-osd span { font-size:18px; font-weight:bold; }
-#loading {position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); border:6px solid rgba(255,255,255,0.3); border-top:6px solid #00bfff; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; display:none; z-index:3;}
+#loading {position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); border:6px solid rgba(255,255,255,0.3); border-top:6px solid #00bfff; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; display:none;}
 @keyframes spin { 100% { transform:translate(-50%,-50%) rotate(360deg); } }
 #overlay::before, #overlay::after {content:""; position:absolute; left:0; right:0; height:40px; pointer-events:none;}
 #overlay::before {top:0; background: linear-gradient(to bottom, rgba(0,0,0,0.85), transparent);}
@@ -38,9 +33,7 @@ video {
 </head>
 <body>
 
-<img id="bg-loading" src="https://i.imgur.com/your-loading-image.jpg" alt="Loading...">
 <video id="video" autoplay playsinline></video>
-
 <div id="overlay"><div id="grid"></div></div>
 <div id="number-osd"></div>
 <div id="channel-osd"><img id="osd-logo"><span id="osd-name"></span></div>
@@ -61,7 +54,6 @@ const channelOSD = document.getElementById("channel-osd");
 const osdLogo = document.getElementById("osd-logo");
 const osdName = document.getElementById("osd-name");
 const loading = document.getElementById("loading");
-const bgLoading = document.getElementById("bg-loading");
 
 // --- M3U Parser ---
 async function loadM3U(url){
@@ -88,13 +80,14 @@ async function loadChannel(index){
   if(index < 0 || index >= channels.length) return;
   currentIndex = index;
   const ch = channels[index], url = ch.url.toLowerCase();
-
   loading.style.display = "block";
-  bgLoading.style.display = "block";
 
   if(playerInstance && playerInstance.destroy) playerInstance.destroy();
-  video.pause(); video.src=""; video.load();
-  video.muted = false; video.volume = 1.0;
+  video.pause();
+  video.src = "";
+  video.load();
+  video.muted = false;
+  video.volume = 1.0;
 
   try {
     if(url.endsWith(".m3u8") || url.endsWith(".ts") || url.endsWith(".php")){
@@ -104,12 +97,17 @@ async function loadChannel(index){
         hls.loadSource(ch.url);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, async () => {
-          try { await video.play(); } catch(e){ console.warn("Autoplay bị chặn"); }
+          try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
         });
       } else if(video.canPlayType("application/vnd.apple.mpegurl")){
         video.src = ch.url;
         await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
-        try { await video.play(); } catch(e){ console.warn("Autoplay bị chặn"); }
+        try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
+        playerInstance = video;
+      } else {
+        video.src = ch.url;
+        await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
+        try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
         playerInstance = video;
       }
     } else if(url.endsWith(".mpd")){
@@ -118,19 +116,13 @@ async function loadChannel(index){
       shakaPlayer.addEventListener("error", e => console.error(e));
       await shakaPlayer.load(ch.url);
       await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
-      try { await video.play(); } catch(e){ console.warn("Autoplay bị chặn"); }
+      try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
     } else {
       video.src = ch.url;
       await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
-      try { await video.play(); } catch(e){ console.warn("Autoplay bị chặn"); }
+      try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
       playerInstance = video;
     }
-
-    // Ẩn ảnh nền và loading khi video thực sự phát
-    video.addEventListener("playing", () => {
-      bgLoading.style.display = "none";
-      loading.style.display = "none";
-    }, {once:true});
 
     if('wakeLock' in navigator){
       try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){console.error(e);}
@@ -143,6 +135,7 @@ async function loadChannel(index){
 
   } catch(e){ console.error(e); }
 
+  loading.style.display = "none";
   showChannelOSD(ch);
   renderGrid();
 }
@@ -165,7 +158,7 @@ function showNumberOSD(num){ numberOSD.textContent=num; numberOSD.style.display=
 function hideNumberOSD(){ numberOSD.style.display="none"; }
 function showChannelOSD(ch){ osdLogo.src=ch.logo||""; osdName.textContent=ch.name; channelOSD.style.display="flex"; clearTimeout(osdTimer); osdTimer=setTimeout(()=>{channelOSD.style.display="none";},5000); }
 
-// --- Remote / Android TV ---
+// --- Remote Control ---
 document.addEventListener("keydown", e=>{
   if(/^[0-9]$/.test(e.key)){
     numberInput += e.key; showNumberOSD(numberInput);
@@ -187,7 +180,7 @@ document.addEventListener("keydown", e=>{
     switch(e.key){
       case "ArrowUp": if(focusIndex>0) focusIndex--; renderGrid(); break;
       case "ArrowDown": if(focusIndex<channels.length-1) focusIndex++; renderGrid(); break;
-      case "Enter": loadChannel(focusIndex); overlayVisible=false; overlay.style.display="none"; break;
+      case "Enter": overlayVisible=false; overlay.style.display="none"; loadChannel(focusIndex); break;
       case "Backspace": case "Escape": overlayVisible=false; overlay.style.display="none"; break;
     }
   }
