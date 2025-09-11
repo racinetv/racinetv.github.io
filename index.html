@@ -1,228 +1,115 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>IPTV Player Full - Android TV</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video.js HLS Player with Chrome Features</title>
+  <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet" />
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.9.3/shaka-player.compiled.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-
-<style>
-body { margin:0; background:#000; color:#fff; font-family:sans-serif; overflow:hidden;}
-video {width:100%; height:100vh; object-fit:cover; background:#000;}
-#overlay {position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);display:none;padding:20px;overflow:hidden;}
-#grid {display:flex; flex-direction:column; gap:8px; padding:10px; max-height:100vh; overflow-y:auto;
-       scrollbar-width: thin; scrollbar-color: #00bfff rgba(255,255,255,0.1);}
-#grid::-webkit-scrollbar {width: 0px;}
-#grid::-webkit-scrollbar-track {background: rgba(255,255,255,0.1); border-radius:4px;}
-#grid::-webkit-scrollbar-thumb {background-color: #00bfff; border-radius:5px;}
-.channel {display:flex; align-items:center; background:rgba(255,255,255,0.05); border-radius:12px; padding:8px 12px; transition:all 0.2s; cursor:pointer;}
-.channel img {width:100px; height:50px; object-fit:contain; margin-right:15px;}
-.channel.focused {outline:1px solid #00bfff; transform: scale(1.08); background: rgba(0,191,255,0.3); transition: all 0.2s ease-in-out;}
-.channel.active {background:rgba(0,191,255,0.3);}
-#number-osd {position:absolute; top:35%; left:35%; transform:translateX(-50%); font-size:20px; background:rgba(0,0,0,0.6); padding:20px 40px; border-radius:12px; display:none;}
-#channel-osd {position:absolute; top:20px; left:20px; background:rgba(0,0,0,0.7); padding:10px 20px; border-radius:12px; display:none; align-items:center; gap:10px;}
-#channel-osd img { width:100px; height:50px; object-fit:contain; }
-#channel-osd span { font-size:18px; font-weight:bold; }
-#loading {position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); border:6px solid rgba(255,255,255,0.3); border-top:6px solid #00bfff; border-radius:50%; width:60px; height:60px; animation:spin 1s linear infinite; display:none;}
-@keyframes spin { 100% { transform:translate(-50%,-50%) rotate(360deg); } }
-#overlay::before, #overlay::after {content:""; position:absolute; left:0; right:0; height:40px; pointer-events:none;}
-#overlay::before {top:0; background: linear-gradient(to bottom, rgba(0,0,0,0.85), transparent);}
-#overlay::after {bottom:0; background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);}
-</style>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: black;
+    }
+    .video-js {
+      width: 100% !important;
+      height: 100% !important;
+    }
+    #pip-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 10;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.7);
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
 
-<video id="video" autoplay playsinline></video>
-<div id="overlay"><div id="grid"></div></div>
-<div id="number-osd"></div>
-<div id="channel-osd"><img id="osd-logo"><span id="osd-name"></span></div>
-<div id="loading"></div>
+  <video
+    id="my-video"
+    class="video-js"
+    controls
+    preload="auto"
+    autoplay
+    muted
+    poster="MY_VIDEO_POSTER.jpg"
+    data-setup='{}'
+  >
+    <source src="http://125hvt.ddns.net:21585/hbo/tracks-v1a1/mono.m3u8" type="application/x-mpegURL" />
+    <p class="vjs-no-js">
+      To view this video please enable JavaScript, and consider upgrading to a
+      web browser that
+      <a href="https://videojs.com/html5-video-support/" target="_blank">
+        supports HTML5 video
+      </a>
+    </p>
+  </video>
 
-<script>
-const M3U_URL = "https://raw.githubusercontent.com/vnrartv/vnrartv.github.io/main/racinetv_android_tv.m3u";
-const UPDATE_INTERVAL = 60000;
+  <button id="pip-btn">PiP</button>
 
-let channels=[], currentIndex=0, focusIndex=0, overlayVisible=false;
-let numberInput="", numberTimer=null, osdTimer=null, zapInterval=null, playerInstance=null, wakeLock=null;
+  <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+  <script>
+    const player = videojs('my-video');
 
-const video = document.getElementById("video");
-const overlay = document.getElementById("overlay");
-const grid = document.getElementById("grid");
-const numberOSD = document.getElementById("number-osd");
-const channelOSD = document.getElementById("channel-osd");
-const osdLogo = document.getElementById("osd-logo");
-const osdName = document.getElementById("osd-name");
-const loading = document.getElementById("loading");
+    // Autoplay muted
+    player.ready(function() {
+      player.play().catch(() => console.log('Autoplay blocked'));
+    });
 
-// --- M3U Parser ---
-async function loadM3U(url){
-  const text = await (await fetch(url)).text();
-  const lines = text.split("\n");
-  const result = []; 
-  let current = {};
-  lines.forEach(line => {
-    line = line.trim();
-    if(line.startsWith("#EXTINF")){
-      const nameMatch = line.match(/,(.*)$/);
-      const logoMatch = line.match(/tvg-logo="(.*?)"/);
-      current = {name: nameMatch?nameMatch[1]:"No name", logo: logoMatch?logoMatch[1]:""};
-    } else if(line && !line.startsWith("#")){
-      current.url = line;
-      result.push(current); current = {};
-    }
-  });
-  return result;
-}
-
-// --- Load channel ---
-async function loadChannel(index){
-  if(index < 0 || index >= channels.length) return;
-  currentIndex = index;
-  const ch = channels[index], url = ch.url.toLowerCase();
-  loading.style.display = "block";
-
-  if(playerInstance && playerInstance.destroy) playerInstance.destroy();
-  video.pause();
-  video.src = "";
-  video.load();
-  video.muted = false;
-  video.volume = 1.0;
-
-  try {
-    if(url.endsWith(".m3u8") || url.endsWith(".ts") || url.endsWith(".php")){
-      if(Hls.isSupported()){
-        const hls = new Hls();
-        playerInstance = hls;
-        hls.loadSource(ch.url);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, async () => {
-          try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
-        });
-      } else if(video.canPlayType("application/vnd.apple.mpegurl")){
-        video.src = ch.url;
-        await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
-        try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
-        playerInstance = video;
-      } else {
-        video.src = ch.url;
-        await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
-        try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
-        playerInstance = video;
+    // Tự bật âm thanh khi người dùng tương tác
+    const enableSound = () => {
+      if (player.muted()) {
+        player.muted(false);
+        player.volume(1);
       }
-    } else if(url.endsWith(".mpd")){
-      const shakaPlayer = new shaka.Player(video);
-      playerInstance = shakaPlayer;
-      shakaPlayer.addEventListener("error", e => console.error(e));
-      await shakaPlayer.load(ch.url);
-      await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
-      try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
-    } else {
-      video.src = ch.url;
-      await new Promise(resolve => video.addEventListener("canplay", resolve, {once:true}));
-      try { await video.play(); } catch(err){ console.warn("Autoplay bị chặn"); }
-      playerInstance = video;
-    }
+      window.removeEventListener('mousemove', enableSound);
+      window.removeEventListener('scroll', enableSound);
+      window.removeEventListener('keydown', enableSound);
+      window.removeEventListener('touchstart', enableSound);
+    };
+    window.addEventListener('mousemove', enableSound);
+    window.addEventListener('scroll', enableSound);
+    window.addEventListener('keydown', enableSound);
+    window.addEventListener('touchstart', enableSound);
 
-    if('wakeLock' in navigator){
-      try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){console.error(e);}
-    }
-
-    const reloadHandler = () => setTimeout(()=>loadChannel(currentIndex),1000);
-    video.onerror = reloadHandler;
-    video.onstalled = reloadHandler;
-    video.onwaiting = reloadHandler;
-
-  } catch(e){ console.error(e); }
-
-  loading.style.display = "none";
-  showChannelOSD(ch);
-  renderGrid();
-}
-
-// --- ListView ---
-function renderGrid(){
-  grid.innerHTML="";
-  channels.forEach((ch, idx)=>{
-    const div=document.createElement("div");
-    div.className="channel"+(idx===currentIndex?" active":"")+(idx===focusIndex?" focused":"");
-    div.innerHTML=`<img src="${ch.logo}"><div>${ch.name}</div>`;
-    grid.appendChild(div);
-  });
-  const focusedDiv = grid.children[focusIndex];
-  if(focusedDiv) focusedDiv.scrollIntoView({behavior:"smooth", block:"center"});
-}
-
-// --- OSD ---
-function showNumberOSD(num){ numberOSD.textContent=num; numberOSD.style.display="block"; }
-function hideNumberOSD(){ numberOSD.style.display="none"; }
-function showChannelOSD(ch){ osdLogo.src=ch.logo||""; osdName.textContent=ch.name; channelOSD.style.display="flex"; clearTimeout(osdTimer); osdTimer=setTimeout(()=>{channelOSD.style.display="none";},5000); }
-
-// --- Remote Control ---
-document.addEventListener("keydown", e=>{
-  if(/^[0-9]$/.test(e.key)){
-    numberInput += e.key; showNumberOSD(numberInput);
-    clearTimeout(numberTimer);
-    numberTimer = setTimeout(()=>{
-      const idx = parseInt(numberInput,10)-1;
-      if(!isNaN(idx)) loadChannel(idx);
-      numberInput=""; hideNumberOSD();
-      overlayVisible=false; overlay.style.display="none";
-    },1500);
-    return;
-  }
-
-  if(!overlayVisible){
-    if(e.key==="ArrowUp") loadChannel((currentIndex-1+channels.length)%channels.length);
-    if(e.key==="ArrowDown") loadChannel((currentIndex+1)%channels.length);
-    if(e.key==="Enter"){ overlayVisible=true; overlay.style.display="block"; focusIndex=currentIndex; renderGrid(); }
-  } else {
-    switch(e.key){
-      case "ArrowUp": if(focusIndex>0) focusIndex--; renderGrid(); break;
-      case "ArrowDown": if(focusIndex<channels.length-1) focusIndex++; renderGrid(); break;
-      case "Enter": overlayVisible=false; overlay.style.display="none"; loadChannel(focusIndex); break;
-      case "Backspace": case "Escape": overlayVisible=false; overlay.style.display="none"; break;
-    }
-  }
-});
-
-// --- Zap holding arrow ---
-document.addEventListener("keydown",e=>{
-  if(zapInterval || overlayVisible) return;
-  if(e.key==="ArrowUp") zapInterval=setInterval(()=>loadChannel((currentIndex-1+channels.length)%channels.length),800);
-  if(e.key==="ArrowDown") zapInterval=setInterval(()=>loadChannel((currentIndex+1)%channels.length),800);
-});
-document.addEventListener("keyup",()=>{ if(zapInterval){ clearInterval(zapInterval); zapInterval=null; } });
-
-// --- Click/touch video hiển thị overlay ---
-video.addEventListener("click", () => {
-  overlayVisible=true;
-  overlay.style.display="block";
-  focusIndex=currentIndex;
-  renderGrid();
-});
-
-// --- Tự động cập nhật M3U ---
-setInterval(async()=>{
-  try{
-    const newChannels = await loadM3U(M3U_URL);
-    let added=false;
-    newChannels.forEach(ch=>{
-      if(!channels.some(c=>c.url===ch.url)){
-        channels.push(ch);
-        added=true;
+    // Picture-in-Picture
+    const pipBtn = document.getElementById('pip-btn');
+    pipBtn.addEventListener('click', async () => {
+      try {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+        } else {
+          await player.tech().el().requestPictureInPicture();
+        }
+      } catch (err) {
+        console.error('PiP failed:', err);
       }
     });
-    if(added){ renderGrid(); }
-  } catch(e){ console.error("Lỗi cập nhật kênh mới:", e); }
-}, UPDATE_INTERVAL);
 
-// --- Start ---
-(async()=>{
-  channels = await loadM3U(M3U_URL);
-  if(channels.length>0) loadChannel(0);
-  else alert("Không tìm thấy kênh trong M3U!");
-})();
-</script>
+    // Media Session API
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'HLS Stream',
+        artist: 'Video.js',
+        album: 'Live Stream',
+        artwork: [
+          { src: 'MY_VIDEO_POSTER.jpg', sizes: '512x512', type: 'image/jpeg' }
+        ]
+      });
+
+      navigator.mediaSession.setActionHandler('play', () => { player.play(); });
+      navigator.mediaSession.setActionHandler('pause', () => { player.pause(); });
+      navigator.mediaSession.setActionHandler('seekbackward', () => { player.currentTime(player.currentTime() - 10); });
+      navigator.mediaSession.setActionHandler('seekforward', () => { player.currentTime(player.currentTime() + 10); });
+    }
+  </script>
 </body>
 </html>
